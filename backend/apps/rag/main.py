@@ -721,22 +721,28 @@ def store_text_in_vector_db(
     # 분할된 문서를 벡터 데이터베이스에 저장
     return store_docs_in_vector_db(docs, collection_name, overwrite)
 
-
+# 벡터 DB에 문서 저장 기능을 구현한 함수입니다.
 def store_docs_in_vector_db(docs, collection_name, overwrite: bool = False) -> bool:
+    # 문서 저장 작업 시작을 로그에 기록합니다.
     log.info(f"store_docs_in_vector_db {docs} {collection_name}")
 
+    # 문서들에서 페이지 내용을 추출하여 리스트에 저장합니다.
     texts = [doc.page_content for doc in docs]
+    # 문서들에서 메타데이터를 추출하여 리스트에 저장합니다.
     metadatas = [doc.metadata for doc in docs]
 
     try:
+        # overwrite 옵션이 True이면 기존 컬렉션을 삭제합니다.
         if overwrite:
             for collection in CHROMA_CLIENT.list_collections():
                 if collection_name == collection.name:
                     log.info(f"deleting existing collection {collection_name}")
                     CHROMA_CLIENT.delete_collection(name=collection_name)
 
+        # 새로운 컬렉션을 생성합니다.
         collection = CHROMA_CLIENT.create_collection(name=collection_name)
 
+        # 임베딩 함수를 가져옵니다. 이 함수는 문서의 텍스트를 벡터로 변환하는 데 사용됩니다.
         embedding_func = get_embedding_function(
             app.state.config.RAG_EMBEDDING_ENGINE,
             app.state.config.RAG_EMBEDDING_MODEL,
@@ -745,9 +751,12 @@ def store_docs_in_vector_db(docs, collection_name, overwrite: bool = False) -> b
             app.state.config.OPENAI_API_BASE_URL,
         )
 
+        # 텍스트에서 줄바꿈 문자를 공백으로 대체합니다.
         embedding_texts = list(map(lambda x: x.replace("\n", " "), texts))
+        # 임베딩 함수를 이용하여 텍스트를 벡터로 변환합니다.
         embeddings = embedding_func(embedding_texts)
 
+        # 생성된 벡터, 메타데이터, 문서 ID를 배치로 생성하여 컬렉션에 추가합니다.
         for batch in create_batches(
             api=CHROMA_CLIENT,
             ids=[str(uuid.uuid4()) for _ in texts],
@@ -757,68 +766,36 @@ def store_docs_in_vector_db(docs, collection_name, overwrite: bool = False) -> b
         ):
             collection.add(*batch)
 
+        # 모든 작업이 성공적으로 완료되면 True를 반환합니다.
         return True
     except Exception as e:
+        # 예외 발생 시 로그에 기록합니다.
         log.exception(e)
+        # 고유 제약 조건 오류가 발생한 경우 True를 반환합니다.
         if e.__class__.__name__ == "UniqueConstraintError":
             return True
 
+        # 그 외의 경우 False를 반환합니다.
         return False
 
 
+# 파일 로더를 선택하는 함수입니다.
 def get_loader(filename: str, file_content_type: str, file_path: str):
+    # 파일 확장자를 소문자로 변환하여 추출합니다.
     file_ext = filename.split(".")[-1].lower()
     known_type = True
 
+    # 지원하는 소스 코드 파일 확장자 목록입니다.
     known_source_ext = [
-        "go",
-        "py",
-        "java",
-        "sh",
-        "bat",
-        "ps1",
-        "cmd",
-        "js",
-        "ts",
-        "css",
-        "cpp",
-        "hpp",
-        "h",
-        "c",
-        "cs",
-        "sql",
-        "log",
-        "ini",
-        "pl",
-        "pm",
-        "r",
-        "dart",
-        "dockerfile",
-        "env",
-        "php",
-        "hs",
-        "hsc",
-        "lua",
-        "nginxconf",
-        "conf",
-        "m",
-        "mm",
-        "plsql",
-        "perl",
-        "rb",
-        "rs",
-        "db2",
-        "scala",
-        "bash",
-        "swift",
-        "vue",
-        "svelte",
+        "go", "py", "java", "sh", "bat", "ps1", "cmd", "js", "ts", "css", "cpp", "hpp",
+        "h", "c", "cs", "sql", "log", "ini", "pl", "pm", "r", "dart", "dockerfile", "env",
+        "php", "hs", "hsc", "lua", "nginxconf", "conf", "m", "mm", "plsql", "perl", "rb",
+        "rs", "db2", "scala", "bash", "swift", "vue", "svelte",
     ]
 
+    # 파일 확장자나 컨텐츠 타입에 따라 적절한 로더를 선택합니다.
     if file_ext == "pdf":
-        loader = PyPDFLoader(
-            file_path, extract_images=app.state.config.PDF_EXTRACT_IMAGES
-        )
+        loader = PyPDFLoader(file_path, extract_images=app.state.config.PDF_EXTRACT_IMAGES)
     elif file_ext == "csv":
         loader = CSVLoader(file_path)
     elif file_ext == "rst":
@@ -831,63 +808,50 @@ def get_loader(filename: str, file_content_type: str, file_path: str):
         loader = UnstructuredMarkdownLoader(file_path)
     elif file_content_type == "application/epub+zip":
         loader = UnstructuredEPubLoader(file_path)
-    elif (
-        file_content_type
-        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        or file_ext in ["doc", "docx"]
-    ):
+    elif (file_content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or file_ext in ["doc", "docx"]):
         loader = Docx2txtLoader(file_path)
-    elif file_content_type in [
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ] or file_ext in ["xls", "xlsx"]:
+    elif file_content_type in ["application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] or file_ext in ["xls", "xlsx"]:
         loader = UnstructuredExcelLoader(file_path)
-    elif file_content_type in [
-        "application/vnd.ms-powerpoint",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ] or file_ext in ["ppt", "pptx"]:
+    elif file_content_type in ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"] or file_ext in ["ppt", "pptx"]:
         loader = UnstructuredPowerPointLoader(file_path)
-    elif file_ext in known_source_ext or (
-        file_content_type and file_content_type.find("text/") >= 0
-    ):
+    elif file_ext in known_source_ext or (file_content_type and file_content_type.find("text/") >= 0):
         loader = TextLoader(file_path, autodetect_encoding=True)
     else:
         loader = TextLoader(file_path, autodetect_encoding=True)
         known_type = False
 
+    # 선택된 로더와 파일 타입이 알려져 있는지 여부를 반환합니다.
     return loader, known_type
-
 
 @app.post("/doc")
 def store_doc(
-    collection_name: Optional[str] = Form(None),
-    file: UploadFile = File(...),
-    user=Depends(get_current_user),
+    collection_name: Optional[str] = Form(None),  # 선택적으로 컬렉션 이름을 Form 데이터로 받습니다.
+    file: UploadFile = File(...),  # 업로드된 파일을 받습니다.
+    user=Depends(get_current_user),  # 현재 사용자를 확인하는 의존성을 주입합니다.
 ):
-    # "https://www.gutenberg.org/files/1727/1727-h/1727-h.htm"
-
+    # 파일의 내용 유형을 로그로 기록합니다.
     log.info(f"file.content_type: {file.content_type}")
     try:
-        unsanitized_filename = file.filename
-        filename = os.path.basename(unsanitized_filename)
+        unsanitized_filename = file.filename  # 파일 이름을 가져옵니다.
+        filename = os.path.basename(unsanitized_filename)  # 경로나 디렉토리를 제외한 파일 이름만 추출합니다.
 
-        file_path = f"{UPLOAD_DIR}/{filename}"
+        file_path = f"{UPLOAD_DIR}/{filename}"  # 파일을 저장할 경로를 설정합니다.
 
-        contents = file.file.read()
-        with open(file_path, "wb") as f:
-            f.write(contents)
-            f.close()
+        contents = file.file.read()  # 파일의 내용을 읽습니다.
+        with open(file_path, "wb") as f:  # 파일을 바이너리 쓰기 모드로 엽니다.
+            f.write(contents)  # 파일 내용을 씁니다.
+            f.close()  # 파일을 닫습니다.
 
-        f = open(file_path, "rb")
-        if collection_name == None:
-            collection_name = calculate_sha256(f)[:63]
-        f.close()
+        f = open(file_path, "rb")  # 파일을 다시 바이너리 읽기 모드로 엽니다.
+        if collection_name == None:  # 컬렉션 이름이 제공되지 않았다면,
+            collection_name = calculate_sha256(f)[:63]  # 파일의 내용으로부터 SHA-256 해시를 계산하여 컬렉션 이름으로 사용합니다.
+        f.close()  # 파일을 닫습니다.
 
-        loader, known_type = get_loader(filename, file.content_type, file_path)
-        data = loader.load()
+        loader, known_type = get_loader(filename, file.content_type, file_path)  # 파일을 읽기 위한 로더를 얻습니다.
+        data = loader.load()  # 파일의 내용을 로드합니다.
 
         try:
-            result = store_data_in_vector_db(data, collection_name)
+            result = store_data_in_vector_db(data, collection_name)  # 데이터를 벡터 데이터베이스에 저장합니다.
 
             if result:
                 return {
@@ -903,12 +867,12 @@ def store_doc(
             )
     except Exception as e:
         log.exception(e)
-        if "No pandoc was found" in str(e):
+        if "No pandoc was found" in str(e):  # Pandoc이 설치되지 않은 경우에 대한 예외 처리입니다.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ERROR_MESSAGES.PANDOC_NOT_INSTALLED,
             )
-        else:
+        else:  # 기타 예외에 대한 처리입니다.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ERROR_MESSAGES.DEFAULT(e),
@@ -916,62 +880,60 @@ def store_doc(
 
 
 class TextRAGForm(BaseModel):
-    name: str
-    content: str
-    collection_name: Optional[str] = None
+    name: str  # 텍스트 데이터의 이름입니다.
+    content: str  # 실제 텍스트 데이터입니다.
+    collection_name: Optional[str] = None  # 선택적으로 컬렉션 이름을 지정할 수 있습니다.
 
 
 @app.post("/text")
 def store_text(
-    form_data: TextRAGForm,
-    user=Depends(get_current_user),
+    form_data: TextRAGForm,  # 텍스트 데이터와 관련 정보를 담고 있는 폼 데이터입니다.
+    user=Depends(get_current_user),  # 현재 사용자를 확인하는 의존성을 주입합니다.
 ):
 
     collection_name = form_data.collection_name
-    if collection_name == None:
-        collection_name = calculate_sha256_string(form_data.content)
+    if collection_name == None:  # 컬렉션 이름이 제공되지 않았다면,
+        collection_name = calculate_sha256_string(form_data.content)  # 텍스트 내용으로부터 SHA-256 해시를 계산하여 컬렉션 이름으로 사용합니다.
 
     result = store_text_in_vector_db(
         form_data.content,
-        metadata={"name": form_data.name, "created_by": user.id},
+        metadata={"name": form_data.name, "created_by": user.id},  # 메타데이터로 이름과 생성자 ID를 저장합니다.
         collection_name=collection_name,
     )
 
     if result:
         return {"status": True, "collection_name": collection_name}
-    else:
+    else:  # 데이터 저장에 실패한 경우,
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ERROR_MESSAGES.DEFAULT(),
         )
 
-
+# 문서 디렉토리를 스캔하는 엔드포인트
 @app.get("/scan")
-def scan_docs_dir(user=Depends(get_admin_user)):
-    for path in Path(DOCS_DIR).rglob("./**/*"):
+def scan_docs_dir(user=Depends(get_admin_user)):  # 관리자 사용자만 이용할 수 있도록 의존성 주입을 사용합니다.
+    for path in Path(DOCS_DIR).rglob("./**/*"):  # DOCS_DIR 경로 내 모든 파일을 재귀적으로 탐색합니다.
         try:
-            if path.is_file() and not path.name.startswith("."):
-                tags = extract_folders_after_data_docs(path)
+            if path.is_file() and not path.name.startswith("."):  # 숨김 파일이 아닌 일반 파일인 경우
+                tags = extract_folders_after_data_docs(path)  # 파일 경로로부터 태그 추출
                 filename = path.name
-                file_content_type = mimetypes.guess_type(path)
+                file_content_type = mimetypes.guess_type(path)  # 파일의 MIME 타입 추정
 
                 f = open(path, "rb")
-                collection_name = calculate_sha256(f)[:63]
+                collection_name = calculate_sha256(f)[:63]  # 파일 내용을 기반으로한 SHA256 해시값 생성
                 f.close()
 
-                loader, known_type = get_loader(
-                    filename, file_content_type[0], str(path)
-                )
-                data = loader.load()
+                loader, known_type = get_loader(filename, file_content_type[0], str(path))
+                data = loader.load()  # 파일 로더를 이용하여 파일 내용 로드
 
                 try:
-                    result = store_data_in_vector_db(data, collection_name)
+                    result = store_data_in_vector_db(data, collection_name)  # 벡터 데이터베이스에 데이터 저장 시도
 
                     if result:
-                        sanitized_filename = sanitize_filename(filename)
+                        sanitized_filename = sanitize_filename(filename)  # 안전한 파일 이름 생성
                         doc = Documents.get_doc_by_name(sanitized_filename)
 
-                        if doc == None:
+                        if doc == None:  # 문서가 데이터베이스에 존재하지 않는 경우 새로운 문서로 추가
                             doc = Documents.insert_new_doc(
                                 user.id,
                                 DocumentForm(
@@ -998,47 +960,52 @@ def scan_docs_dir(user=Depends(get_admin_user)):
                                 ),
                             )
                 except Exception as e:
-                    log.exception(e)
+                    log.exception(e)  # 데이터 저장 중 발생한 예외 로깅
                     pass
 
         except Exception as e:
-            log.exception(e)
+            log.exception(e)  # 파일 처리 중 발생한 예외 로깅
 
     return True
 
 
+# 벡터 데이터베이스를 초기화하는 엔드포인트
 @app.get("/reset/db")
-def reset_vector_db(user=Depends(get_admin_user)):
-    CHROMA_CLIENT.reset()
+def reset_vector_db(user=Depends(get_admin_user)):  # 관리자 사용자만 이용할 수 있도록 의존성 주입
+    CHROMA_CLIENT.reset()  # 벡터 데이터베이스 클라이언트를 이용하여 데이터베이스 초기화
 
 
+# 업로드 디렉토리를 초기화하는 엔드포인트
 @app.get("/reset")
-def reset(user=Depends(get_admin_user)) -> bool:
+def reset(user=Depends(get_admin_user)) -> bool:  # 관리자 사용자만 이용할 수 있도록 의존성 주입
     folder = f"{UPLOAD_DIR}"
     for filename in os.listdir(folder):
         file_path = os.path.join(folder, filename)
         try:
             if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
+                os.unlink(file_path)  # 파일 또는 링크 삭제
             elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
+                shutil.rmtree(file_path)  # 디렉토리 삭제
         except Exception as e:
-            log.error("Failed to delete %s. Reason: %s" % (file_path, e))
+            log.error("Failed to delete %s. Reason: %s" % (file_path, e))  # 삭제 실패 로깅
 
     try:
-        CHROMA_CLIENT.reset()
+        CHROMA_CLIENT.reset()  # 추가적으로 벡터 데이터베이스 초기화 시도
     except Exception as e:
         log.exception(e)
 
     return True
 
 
+# 개발 환경에서만 사용되는 엔드포인트 예시
 if ENV == "dev":
 
+    # 'hello world' 텍스트의 임베딩 결과 반환
     @app.get("/ef")
     async def get_embeddings():
         return {"result": app.state.EMBEDDING_FUNCTION("hello world")}
 
+    # 주어진 텍스트의 임베딩 결과 반환
     @app.get("/ef/{text}")
     async def get_embeddings_text(text: str):
         return {"result": app.state.EMBEDDING_FUNCTION(text)}
