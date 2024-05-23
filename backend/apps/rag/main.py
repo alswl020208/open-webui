@@ -474,18 +474,19 @@ async def update_query_settings(
         "r": app.state.config.RELEVANCE_THRESHOLD,
         "hybrid": app.state.config.ENABLE_RAG_HYBRID_SEARCH,
     }
-
+# QuerySettingsForm 클래스는 쿼리 설정 폼 데이터를 정의합니다.
 class QuerySettingsForm(BaseModel):
-    k: Optional[int] = None
-    r: Optional[float] = None
-    template: Optional[str] = None
-    hybrid: Optional[bool] = None
+    k: Optional[int] = None  # 검색 결과 상위 k개의 문서를 반환하는 변수
+    r: Optional[float] = None  # 검색 결과의 관련성 임계값
+    template: Optional[str] = None  # 검색 템플릿
+    hybrid: Optional[bool] = None  # 하이브리드 검색 사용 여부
 
-
+# /query/settings/update 엔드포인트에 대한 POST 요청을 처리하는 비동기 함수입니다.
 @app.post("/query/settings/update")
 async def update_query_settings(
     form_data: QuerySettingsForm, user=Depends(get_admin_user)
 ):
+    # 설정 값을 업데이트합니다. 폼 데이터가 제공되지 않으면 기본값을 사용합니다.
     app.state.config.RAG_TEMPLATE = (
         form_data.template if form_data.template else RAG_TEMPLATE
     )
@@ -494,6 +495,7 @@ async def update_query_settings(
     app.state.config.ENABLE_RAG_HYBRID_SEARCH = (
         form_data.hybrid if form_data.hybrid else False
     )
+    # 업데이트된 설정 값을 반환합니다.
     return {
         "status": True,
         "template": app.state.config.RAG_TEMPLATE,
@@ -502,21 +504,22 @@ async def update_query_settings(
         "hybrid": app.state.config.ENABLE_RAG_HYBRID_SEARCH,
     }
 
-
+# QueryDocForm 클래스는 문서 쿼리 폼 데이터를 정의합니다.
 class QueryDocForm(BaseModel):
-    collection_name: str
-    query: str
-    k: Optional[int] = None
-    r: Optional[float] = None
-    hybrid: Optional[bool] = None
+    collection_name: str  # 쿼리할 컬렉션 이름
+    query: str  # 쿼리 문자열
+    k: Optional[int] = None  # 검색 결과 상위 k개의 문서를 반환하는 변수
+    r: Optional[float] = None  # 검색 결과의 관련성 임계값
+    hybrid: Optional[bool] = None  # 하이브리드 검색 사용 여부
 
-
+# /query/doc 엔드포인트에 대한 POST 요청을 처리하는 함수입니다.
 @app.post("/query/doc")
 def query_doc_handler(
     form_data: QueryDocForm,
     user=Depends(get_current_user),
 ):
     try:
+        # 하이브리드 검색이 활성화된 경우
         if app.state.config.ENABLE_RAG_HYBRID_SEARCH:
             return query_doc_with_hybrid_search(
                 collection_name=form_data.collection_name,
@@ -528,35 +531,36 @@ def query_doc_handler(
                     form_data.r if form_data.r else app.state.config.RELEVANCE_THRESHOLD
                 ),
             )
-        else:
+        else:  # 일반 검색
             return query_doc(
                 collection_name=form_data.collection_name,
                 query=form_data.query,
                 embedding_function=app.state.EMBEDDING_FUNCTION,
                 k=form_data.k if form_data.k else app.state.config.TOP_K,
             )
-    except Exception as e:
+    except Exception as e:  # 예외 처리
         log.exception(e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT(e),
         )
 
-
+# QueryCollectionsForm 클래스는 컬렉션 쿼리 폼 데이터를 정의합니다.
 class QueryCollectionsForm(BaseModel):
-    collection_names: List[str]
-    query: str
-    k: Optional[int] = None
-    r: Optional[float] = None
-    hybrid: Optional[bool] = None
+    collection_names: List[str]  # 쿼리할 컬렉션 이름들의 리스트
+    query: str  # 쿼리 문자열
+    k: Optional[int] = None  # 검색 결과 상위 k개의 문서를 반환하는 변수
+    r: Optional[float] = None  # 검색 결과의 관련성 임계값
+    hybrid: Optional[bool] = None  # 하이브리드 검색 사용 여부
 
-
+# /query/collection 엔드포인트에 대한 POST 요청을 처리하는 함수입니다.
 @app.post("/query/collection")
 def query_collection_handler(
     form_data: QueryCollectionsForm,
     user=Depends(get_current_user),
 ):
     try:
+        # 하이브리드 검색이 활성화된 경우
         if app.state.config.ENABLE_RAG_HYBRID_SEARCH:
             return query_collection_with_hybrid_search(
                 collection_names=form_data.collection_names,
@@ -568,15 +572,14 @@ def query_collection_handler(
                     form_data.r if form_data.r else app.state.config.RELEVANCE_THRESHOLD
                 ),
             )
-        else:
+        else:  # 일반 검색
             return query_collection(
                 collection_names=form_data.collection_names,
                 query=form_data.query,
                 embedding_function=app.state.EMBEDDING_FUNCTION,
                 k=form_data.k if form_data.k else app.state.config.TOP_K,
             )
-
-    except Exception as e:
+    except Exception as e:  # 예외 처리
         log.exception(e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -587,6 +590,7 @@ def query_collection_handler(
 @app.post("/youtube")
 def store_youtube_video(form_data: UrlForm, user=Depends(get_current_user)):
     try:
+        # YoutubeLoader를 사용하여 YouTube URL에서 비디오 정보와 데이터를 가져옴
         loader = YoutubeLoader.from_youtube_url(
             form_data.url,
             add_video_info=True,
@@ -595,10 +599,12 @@ def store_youtube_video(form_data: UrlForm, user=Depends(get_current_user)):
         )
         data = loader.load()
 
+        # collection_name이 제공되지 않으면 URL을 해시하여 컬렉션 이름을 생성
         collection_name = form_data.collection_name
         if collection_name == "":
             collection_name = calculate_sha256_string(form_data.url)[:63]
 
+        # 데이터를 벡터 데이터베이스에 저장
         store_data_in_vector_db(data, collection_name, overwrite=True)
         return {
             "status": True,
@@ -606,6 +612,7 @@ def store_youtube_video(form_data: UrlForm, user=Depends(get_current_user)):
             "filename": form_data.url,
         }
     except Exception as e:
+        # 예외 발생 시 로그를 남기고 HTTP 400 에러를 반환
         log.exception(e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -615,18 +622,20 @@ def store_youtube_video(form_data: UrlForm, user=Depends(get_current_user)):
 
 @app.post("/web")
 def store_web(form_data: UrlForm, user=Depends(get_current_user)):
-    # "https://www.gutenberg.org/files/1727/1727-h/1727-h.htm"
     try:
+        # get_web_loader 함수를 사용하여 웹 페이지 로더를 가져옴
         loader = get_web_loader(
             form_data.url,
             verify_ssl=app.state.config.ENABLE_RAG_WEB_LOADER_SSL_VERIFICATION,
         )
         data = loader.load()
 
+        # collection_name이 제공되지 않으면 URL을 해시하여 컬렉션 이름을 생성
         collection_name = form_data.collection_name
         if collection_name == "":
             collection_name = calculate_sha256_string(form_data.url)[:63]
 
+        # 데이터를 벡터 데이터베이스에 저장
         store_data_in_vector_db(data, collection_name, overwrite=True)
         return {
             "status": True,
@@ -634,6 +643,7 @@ def store_web(form_data: UrlForm, user=Depends(get_current_user)):
             "filename": form_data.url,
         }
     except Exception as e:
+        # 예외 발생 시 로그를 남기고 HTTP 400 에러를 반환
         log.exception(e)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -642,30 +652,33 @@ def store_web(form_data: UrlForm, user=Depends(get_current_user)):
 
 
 def get_web_loader(url: str, verify_ssl: bool = True):
-    # Check if the URL is valid
+    # URL이 유효한지 검사
     if isinstance(validators.url(url), validators.ValidationError):
         raise ValueError(ERROR_MESSAGES.INVALID_URL)
+
+    # 로컬 웹 페치가 비활성화된 경우, 개인 IP 주소로 해석되는 URL을 필터링
     if not ENABLE_RAG_LOCAL_WEB_FETCH:
-        # Local web fetch is disabled, filter out any URLs that resolve to private IP addresses
+        # URL을 파싱하여 호스트 이름을 가져옴
         parsed_url = urllib.parse.urlparse(url)
-        # Get IPv4 and IPv6 addresses
+        # 호스트 이름을 통해 IPv4 및 IPv6 주소를 해석
         ipv4_addresses, ipv6_addresses = resolve_hostname(parsed_url.hostname)
-        # Check if any of the resolved addresses are private
-        # This is technically still vulnerable to DNS rebinding attacks, as we don't control WebBaseLoader
+        # 해석된 주소 중 개인 IP 주소가 있는지 확인
         for ip in ipv4_addresses:
             if validators.ipv4(ip, private=True):
                 raise ValueError(ERROR_MESSAGES.INVALID_URL)
         for ip in ipv6_addresses:
             if validators.ipv6(ip, private=True):
                 raise ValueError(ERROR_MESSAGES.INVALID_URL)
+
+    # WebBaseLoader 인스턴스를 반환
     return WebBaseLoader(url, verify_ssl=verify_ssl)
 
 
 def resolve_hostname(hostname):
-    # Get address information
+    # 호스트 이름에 대한 주소 정보를 가져옴
     addr_info = socket.getaddrinfo(hostname, None)
 
-    # Extract IP addresses from address information
+    # 주소 정보에서 IPv4 및 IPv6 주소를 추출
     ipv4_addresses = [info[4][0] for info in addr_info if info[0] == socket.AF_INET]
     ipv6_addresses = [info[4][0] for info in addr_info if info[0] == socket.AF_INET6]
 
@@ -673,31 +686,39 @@ def resolve_hostname(hostname):
 
 
 def store_data_in_vector_db(data, collection_name, overwrite: bool = False) -> bool:
-
+    # 텍스트 분할기를 설정 (chunk_size와 chunk_overlap을 사용)
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=app.state.config.CHUNK_SIZE,
         chunk_overlap=app.state.config.CHUNK_OVERLAP,
         add_start_index=True,
     )
 
+    # 데이터를 분할하여 문서 리스트를 생성
     docs = text_splitter.split_documents(data)
 
+    # 분할된 문서가 있을 경우 벡터 데이터베이스에 저장
     if len(docs) > 0:
         log.info(f"store_data_in_vector_db {docs}")
         return store_docs_in_vector_db(docs, collection_name, overwrite), None
     else:
+        # 분할된 문서가 없을 경우 예외 발생
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
 
 def store_text_in_vector_db(
-    text, metadata, collection_name, overwrite: bool = False
+        text, metadata, collection_name, overwrite: bool = False
 ) -> bool:
+    # 텍스트 분할기를 설정 (chunk_size와 chunk_overlap을 사용)
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=app.state.config.CHUNK_SIZE,
         chunk_overlap=app.state.config.CHUNK_OVERLAP,
         add_start_index=True,
     )
+
+    # 텍스트와 메타데이터를 분할하여 문서 리스트를 생성
     docs = text_splitter.create_documents([text], metadatas=[metadata])
+
+    # 분할된 문서를 벡터 데이터베이스에 저장
     return store_docs_in_vector_db(docs, collection_name, overwrite)
 
 
